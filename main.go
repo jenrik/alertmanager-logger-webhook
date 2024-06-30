@@ -44,6 +44,7 @@ func main() {
 			Compress:   false,
 		},
 	}
+
 	signal.Notify(server.reloadChan, syscall.SIGHUP)
 
 	go func() {
@@ -58,8 +59,10 @@ func main() {
 	// Start alert writer
 	go server.writer()
 
+	// Start http server
 	go runHttpServer(listen, &server, wg)
 
+	// Wait for both http server and logger to shut down
 	wg.Wait()
 	log.Println("Shutdown complete")
 }
@@ -76,7 +79,6 @@ func runHttpServer(listen string, server *LoggerServer, wg *sync.WaitGroup) {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("Server listen failed: %+v\n", err)
@@ -84,18 +86,24 @@ func runHttpServer(listen string, server *LoggerServer, wg *sync.WaitGroup) {
 	}()
 	log.Printf("Server listening on %v\n", listen)
 
+	// Wait for termination signal
 	<-done
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer func() {
 		log.Println("Server shutting down")
+		waitDone := ctx.Done()
 		cancel()
+
+		// Wait for shutdown to complete then signal to main routine that we have completed
+		<-waitDone
+		wg.Done()
 	}()
 
+	// Start the shutdown
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server Shutdown Failed: %+v\n", err)
 	}
-
-	wg.Done()
 }
 
 type LoggerServer struct {
@@ -129,12 +137,17 @@ func (s *LoggerServer) log(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	buf := bytes.NewBuffer(nil)
+	// Compact json element, so we are guaranteed it only uses a single line
 	err = json.Compact(buf, data)
 	if err != nil {
+		// We probably received malformed JSON or something that is not JSON
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	// Add newline to separate logged JSON elements
 	_, _ = buf.Write([]byte{'\n'})
+
+	// Message chan is unbuffered, so we will not complete the response until it have been received by the writer
 	s.messageChan <- buf.Bytes()
 
 	w.WriteHeader(http.StatusOK)
