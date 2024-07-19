@@ -28,3 +28,25 @@ receivers:
 ```
 
 _Remember to store the produced log files somewhere safe and useful._
+
+## Verifying artifacts
+
+### Binary artifacts
+
+```sh
+VERSION=1.0.0
+OS=linux
+ARCH=amd64
+
+curl -sSfL -o "binary-${OS}-${ARCH}" "https://github.com/jenrik/alertmanager-logger-webhook/releases/download/v${VERSION}/binary-${OS}-${ARCH}"
+curl -sSfL -o "binary-${OS}-${ARCH}.intoto.jsonl" "https://github.com/jenrik/alertmanager-logger-webhook/releases/download/v${VERSION}/binary-${OS}-${ARCH}.intoto.jsonl"
+slsa-verifier verify-artifact --print-provenance --source-uri=github.com/jenrik/alertmanager-logger-webhook --provenance-path binary-${OS}-${ARCH}.intoto.jsonl binary-${OS}-${ARCH}
+```
+
+# Container
+
+```shell
+VERSION=1.0.0
+DIGEST=sha256:a272762f0571cef78bcc51e47e93b44797ee87aceaea0be157a8e63dfc8bfc78
+slsa-verifier verify-image --source-uri=github.com/jenrik/alertmanager-logger-webhook --source-tag=v${VERSION} ghcr.io/jenrik/alertmanager-logger-webhook:latest@${DIGEST}
+```
