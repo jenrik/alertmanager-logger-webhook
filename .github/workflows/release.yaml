@@ -44,3 +44,53 @@ jobs:
       go-version: 1.22
       config-file: .slsa-goreleaser/${{matrix.os}}-${{matrix.arch}}.yaml
       evaluated-envs: "COMMIT_DATE:${{needs.args.outputs.commit-date}}, COMMIT:${{needs.args.outputs.commit}}, VERSION:${{needs.args.outputs.version}}, TREE_STATE:${{needs.args.outputs.tree-state}}"
+
+  container:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.22.x'
+      - uses: actions/checkout@v3
+        with:
+          force-tags: true
+      - uses: ko-build/setup-ko@v0.7
+      - id: registry-login
+        env:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${password}" | ko login ghcr.io --username "${username}" --password-stdin
+      - id: build
+        env:
+          KO_DOCKER_REPO: "ghcr.io/jenrik/alertmanager-logger-webhook"
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -e
+          export IMAGE="$(ko build --platform=all --bare --tags=latest,${TAG})"
+          if [ -z "$IMAGE" ]; then
+            exit 1
+          fi
+          echo "generated image: $IMAGE"
+          echo "image=$(echo "$IMAGE" | cut -d '@' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "digest=$(echo "$IMAGE" | cut -d '@' -f 2)" >> "$GITHUB_OUTPUT"
+
+  provenance:
+    needs: [ container ]
+    permissions:
+      actions: read # for detecting the Github Actions environment.
+      id-token: write # for creating OIDC tokens for signing.
+      packages: write # for uploading attestations.
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
+    with:
+      image: ${{ needs.container.outputs.image }}
+      digest: ${{ needs.container.outputs.digest }}
+      registry-username: ${{ github.actor }}
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}
