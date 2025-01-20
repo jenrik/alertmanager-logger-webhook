@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # tag=v4.2.2
         with:
           force-tags: true
-      - uses: ko-build/setup-ko@3aebd0597dc1e9d1a26bcfdb7cbeb19c131d3037 # tag=v0.7
+      - uses: ko-build/setup-ko@d982fec422852203cfb2053a8ec6ad302280d04d # tag=v0.8
       - id: registry-login
         env:
           username: ${{ github.actor }}
